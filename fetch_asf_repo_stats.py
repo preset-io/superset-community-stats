@@ -1,9 +1,10 @@
 import requests
 import time
 import csv
+import os
 
 # Your GitHub personal access token
-GITHUB_TOKEN = ''
+GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')
 
 # GraphQL endpoint
 GRAPHQL_URL = "https://api.github.com/graphql"
