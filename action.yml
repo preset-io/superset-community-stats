@@ -1,24 +1,89 @@
-name: 'Fetch Superset Community Stats'
-description: 'An action to fetch various stats related to the Superset project and publish them to be consumed by the Superset Community Dashboard.'
-inputs:
-  token:
-    description: 'GitHub token'
-    required: true
-runs:
-  using: 'composite'
-  steps:
-    - name: Set up Python
-      uses: actions/setup-python@v2
-      with:
-        python-version: '3.x'
+name: Data Scraping and Processing
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # Runs every day at midnight (UTC)
+  push:
+    branches:
+      - main
 
-    - name: Run fetch script
-      run: |
-        python fetch_asf_repo_stats.py
-      env:
-        GITHUB_TOKEN: ${{ inputs.token }}
+jobs:
+    config:
+      runs-on: "ubuntu-latest"
+      outputs:
+        has-secrets: ${{ steps.check.outputs.has-secrets }}
+      steps:
+        - name: "Check for secrets"
+          id: check
+          shell: bash
+          run: |
+            if [ -n "${{ (secrets.GSHEET_KEY != '' ) || '' }}" ]; then
+              echo "has-secrets=1" >> "$GITHUB_OUTPUT"
+            fi
+  scrape-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests shillelagh[gsheetsapi]
+
+      - name: Run Fetch Repos Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python fetch_asf_repo_stats.py
+
+      - name: Upload Apache Repos Data
+        uses: actions/upload-artifact@v2
+        with:
+          name: apache_repo_stats_data
+          path: apache_repo_stats.json
+
+      # - name: Run Another Data Scraping Script
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   run: |
+      #     python another_script.py
+
+      # - name: Upload Another Data
+      #   uses: actions/upload-artifact@v2
+      #   with:
+      #     name: another_data
+      #     path: another_data.json
+
+  process-data:
+    needs: scrape-data
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          path: ./data
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas shillelagh[gsheetsapi]
+
+      - name: Run Data Processing Script
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: |
+          python process_data.py
